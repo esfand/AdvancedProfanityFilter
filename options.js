@@ -1,3 +1,80 @@
+var defaults = {'disabledDomains': [], 'filterSubstring': true, 'preserveFirst': false, 'showCounter': true, 'wordList': 'asshole,bastard,bitch,cunt,damn,fuck,piss,slut,shit,tits,whore'};
+var config = {};
+
+function arrayContains(array, string) {
+  return (array.indexOf(string) > -1);
+}
+
+// Prompt for confirmation
+function confirm(action) {
+  var dialogContainer = document.getElementById('dialogContainer');
+  dialogContainer.innerHTML = '<dialog id="promptDialog">Are you sure?<br><button id="confirmYes">Yes</button><button id="confirmNo">No</button></dialog>';
+  var dialog = document.querySelector("dialog");
+
+  document.getElementById('confirmNo').addEventListener("click", function() {
+    this.removeEventListener('click', arguments.callee, false);
+    dialog.close();
+  })
+  document.getElementById('confirmYes').addEventListener("click", function() {
+    this.removeEventListener('click', arguments.callee, false);
+    if (action == 'importConfig') {
+      importConfig();
+    } else if (action == 'restoreDefaults') {
+      restoreDefaults();
+    }
+    dialog.close();
+  })
+
+  dialog.showModal();
+}
+
+function domainAdd() {
+  var domain = document.getElementById('domainText').value;
+  if (domain != "") {
+    if (!arrayContains(config.disabledDomains, domain)) {
+      config.disabledDomains.push(domain);
+      config.disabledDomains = config.disabledDomains.sort();
+      saveOptions(event, config);
+      dynamicDomains(config.disabledDomains, 'domainSelect');
+      document.getElementById('domainText').value = "";
+    } else {
+      updateStatus('Domain already in list.', true, 3000);
+    }
+  }
+}
+
+function domainRemove() {
+  var domain = document.getElementById('domainSelect').value;
+  if (domain != "") {
+    config.disabledDomains = removeFromArray(config.disabledDomains, domain);
+    saveOptions(event, config);
+    dynamicDomains(config.disabledDomains, 'domainSelect');
+  }
+}
+
+function dynamicDomains(list, selectEm) {
+  var options = '<option value="" disabled selected>Disabled Domains</option>';
+  for(var i = 0; i < list.length; i++) {
+    options += '<option value="'+list[i]+'">'+list[i]+'</option>';
+  }
+  document.getElementById(selectEm).innerHTML = options;
+}
+
+function exportConfig() {
+  chrome.storage.sync.get(defaults, function(settings) {
+    document.getElementById('configText').value = JSON.stringify(settings);
+  });
+}
+
+function importConfig(event) {
+  try {
+    var settings = JSON.parse(document.getElementById('configText').value);
+    saveOptions(event, settings);
+  } catch (e) {
+    updateStatus('Settings not saved! Please try again.', true, 5000);
+  }
+}
+
 // Switching Tabs
 function openTab(evt) {
   // Don't run on current tab
@@ -18,42 +95,44 @@ function openTab(evt) {
   newTabContent.className = newTabContent.className.replace(" hidden", " visible");
 }
 
-// Restores form state to saved values from Chrome Sync
-function restoreOptions() {
-  var defaults = {'disabledDomains': '', 'filterSubstring': true, 'preserveFirst': false, 'showCounter': true, 'wordList': 'asshole,bastard,bitch,cunt,damn,fuck,piss,slut,shit,tits,whore'};
+// Restores form state to saved values from Chrome Storage
+function populateOptions() {
   chrome.storage.sync.get(defaults, function(settings) {
-    // Display saved settings
+    config = settings // Make config globally available
     document.getElementById('wordList').value = settings.wordList;
-    document.getElementById('disabledDomainsList').value = settings.disabledDomains;
     document.getElementById('preserveFirst').checked = settings.preserveFirst;
     document.getElementById('filterSubstring').checked = settings.filterSubstring;
     document.getElementById('showCounter').checked = settings.showCounter;
-    document.getElementById('disabledDomains').value = settings.disabledDomains;
+    dynamicDomains(settings.disabledDomains, 'domainSelect');
   });
+}
+
+function removeFromArray(array, element) {
+  return array.filter(e => e !== element);
 }
 
 // Restore default settings
 function restoreDefaults() {
-  // TODO: Prompt for confirmation
   chrome.storage.sync.clear(function(){
     if (chrome.runtime.lastError) {
       updateStatus('Error restoring defaults! Please try again.', true, 5000);
     } else {
-      restoreOptions();
-      updateStatus('Default settings restored!', false, 3000);
+      populateOptions();
+      updateStatus('Settings restored!', false, 3000);
     }
   });
 }
 
 // Saves options to sync storage
-function saveOptions() {
+function saveOptions(event, settings) {
   // Gather current settings
-  var settings = {};
-  settings.disabledDomains = document.getElementById('disabledDomainsList').value;
-  settings.filterSubstring = document.getElementById('filterSubstring').checked;
-  settings.preserveFirst = document.getElementById('preserveFirst').checked;
-  settings.showCounter = document.getElementById('showCounter').checked;
-  settings.wordList = document.getElementById('wordList').value;
+  if (settings === undefined){
+    settings = {};
+    settings.filterSubstring = document.getElementById('filterSubstring').checked;
+    settings.preserveFirst = document.getElementById('preserveFirst').checked;
+    settings.showCounter = document.getElementById('showCounter').checked;
+    settings.wordList = document.getElementById('wordList').value;
+  }
 
   // Save settings
   chrome.storage.sync.set(settings, function() {
@@ -61,6 +140,7 @@ function saveOptions() {
       updateStatus('Settings not saved! Please try again.', true, 5000);
     } else {
       updateStatus('Settings saved successfully!', false, 3000);
+      populateOptions();
       if (document.getElementById('profanityList').style.display === 'block') {toggleProfanity();} // Close wordList
     }
   });
@@ -89,16 +169,20 @@ function updateStatus(message, error, timeout) {
   setTimeout(function() {status.textContent = ''; status.className = '';}, timeout);
 }
 
+////
 // Add event listeners to DOM
 tabs = document.getElementsByClassName("tablinks");
 for (i = 0; i < tabs.length; i++) {
   tabs[i].addEventListener('click', function(e) { openTab(e); });
 }
-window.addEventListener('load', restoreOptions);
+window.addEventListener('load', populateOptions);
 document.getElementById('toggleProfanity').addEventListener('click', toggleProfanity);
-document.getElementById('saveDisabledDomains').addEventListener('click', saveOptions);
 document.getElementById('saveWords').addEventListener('click', saveOptions);
-document.getElementById('default').addEventListener('click', restoreDefaults);
+document.getElementById('default').addEventListener('click', function() {confirm('restoreDefaults')} );
 document.getElementById('filterSubstring').addEventListener('click', saveOptions);
 document.getElementById('preserveFirst').addEventListener('click', saveOptions);
 document.getElementById('showCounter').addEventListener('click', saveOptions);
+document.getElementById('import').addEventListener('click', function() {confirm('importConfig')} );
+document.getElementById('export').addEventListener('click', exportConfig);
+document.getElementById('domainAdd').addEventListener('click', domainAdd);
+document.getElementById('domainRemove').addEventListener('click', domainRemove);
