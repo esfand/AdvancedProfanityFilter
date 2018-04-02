@@ -32,6 +32,7 @@ var wordRegExps = [];
 var whitespaceRegExp = new RegExp('\\s');
 var xpathDocText = '//*[not(self::script or self::style)]/text()[normalize-space(.) != ""]';
 var xpathNodeText = './/*[not(self::script or self::style)]/text()[normalize-space(.) != ""]';
+var whiteList = ["her", "get", "together"]
 
 // Word must match exactly (not sub-string)
 // /\b(w)ord\b/gi
@@ -74,7 +75,16 @@ function checkNodeForProfanity(mutation) {
 // Censor the profanity
 // Only gets run when there is a match in replaceText()
 function censorReplace(strMatchingString, strFirstLetter) {
+  // Whitelist
+  // console.log('Checking whiteList for: ', strMatchingString)
+  if (whiteList.includes(strMatchingString)) {
+    // console.log('Found in whitelist, return unmodified string:', strMatchingString);
+    return strMatchingString;
+  }
+
   var censoredString = '';
+
+  console.log('Match: ', strMatchingString);
 
   if (censorFixedLength > 0) {
     if (preserveFirst && preserveLast) {
@@ -108,13 +118,7 @@ function cleanPage() {
 
     // Don't run if this is a disabled domain
     // Only run on main page (no frames)
-    if (window == window.top) {
-      message = disabledPage();
-      chrome.runtime.sendMessage(message);
-      if (message.disabled) {
-        return false;
-      }
-    }
+    message = disabledPage();
 
     // If no words are specified use defaultWords
     if (Object.keys(storage.words).length === 0 && storage.words.constructor === Object) {
@@ -147,21 +151,37 @@ function cleanPage() {
 }
 
 function disabledPage() {
-  result = { "disabled": false };
-  domain = window.location.hostname;
+  var message = { "disabled": false };
+  var domain = window.location.hostname;
+  message.url = window.location.href;
 
-  for (var x = 0; x < disabledDomains.length; x++) {
-    if (disabledDomains[x]) {
-      domainRegex = new RegExp("(^|\.)" + disabledDomains[x]);
-      if (domainRegex.test(domain)) {
-        result.disabled = true;
-        result.domain = disabledDomains[x];
-        break;
+  if (window == window.top) {
+    for (var x = 0; x < disabledDomains.length; x++) {
+      if (disabledDomains[x]) {
+        domainRegex = new RegExp("(^|\.)" + disabledDomains[x]);
+        if (domainRegex.test(domain)) {
+          message.disabled = true;
+          message.domain = disabledDomains[x];
+          break;
+        }
       }
     }
+
+    chrome.runtime.sendMessage(message);
+  } else { // This is an iframe - use top-window's status
+    message.frame = true;
+    console.log('waiting...');
+    chrome.runtime.sendMessage(message, function(response) {
+      message = response;
+      console.log('message', message);
+      if (message.disabled) {
+        console.log('disabled frame: ', window.location.href);
+        // throw 'Disabled Frame: ' + window.location.href;
+      }
+    });
   }
 
-  return result;
+  return message;
 }
 
 function escapeRegExp(str) {

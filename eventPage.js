@@ -38,6 +38,25 @@ chrome.runtime.onMessage.addListener(
   function(request, sender, sendResponse) {
     if (request.counter) {
       chrome.browserAction.setBadgeText({text: request.counter, tabId: sender.tab.id});
+    } else if (request.frame) {
+      var disabled = false;
+      var domain = sender.tab.url;
+      chrome.storage.sync.get({"disabledDomains": []}, function(storage) {
+        for (var x = 0; x < storage.disabledDomains.length; x++) {
+          if (storage.disabledDomains[x]) {
+            domainRegex = new RegExp("(^|\.)" + storage.disabledDomains[x]);
+            if (domainRegex.test(domain)) {
+              disabled = true;
+              break;
+            }
+          }
+        }
+
+        request.disabled = disabled;
+        sendResponse(request);
+      });
+
+      return true; // Necessary to return response object to script
     } else if (request.disabled) {
       chrome.browserAction.setIcon({path: 'icons/icon19-disabled.png', tabId: sender.tab.id});
     }
