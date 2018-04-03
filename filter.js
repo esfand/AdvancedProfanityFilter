@@ -10,6 +10,7 @@ var defaults = {
   "preserveLast": false,
   "showCounter": true,
   "substitutionMark": true,
+  "whiteList": [], // TODO: Whitelist
   "words": {}
 };
 var defaultWords = {
@@ -32,6 +33,7 @@ var wordRegExps = [];
 var whitespaceRegExp = new RegExp('\\s');
 var xpathDocText = '//*[not(self::script or self::style)]/text()[normalize-space(.) != ""]';
 var xpathNodeText = './/*[not(self::script or self::style)]/text()[normalize-space(.) != ""]';
+var whiteList;
 
 // Word must match exactly (not sub-string)
 // /\b(w)ord\b/gi
@@ -41,8 +43,10 @@ function buildExactRegexp(word) {
 
 // Match any part of a word (sub-string)
 // /(w)ord/gi
+// /\b\w*(w)(ord)\w*\b/gi // TODO: Whitelist
 function buildPartRegexp(word) {
-  wordRegExps.push(new RegExp('(' + word[0] + ')' + escapeRegExp(word.slice(1)), 'gi' ));
+  // wordRegExps.push(new RegExp('(' + word[0] + ')' + escapeRegExp(word.slice(1)), 'gi' ));
+  wordRegExps.push(new RegExp('\\b\\w*(' + word[0] + ')(' + escapeRegExp(word.slice(1)) + ')\\w*\\b', 'gi' ));
 }
 
 // Match entire word that contains sub-string and surrounding whitespace
@@ -73,7 +77,18 @@ function checkNodeForProfanity(mutation) {
 
 // Censor the profanity
 // Only gets run when there is a match in replaceText()
-function censorReplace(strMatchingString, strFirstLetter) {
+function censorReplace(strMatchingString, strFirstLetter, strPartialMatch) {
+  // Handle whitelist for partial matches
+  var partMatch, wholeMatch;
+  if (strPartialMatch != "") {
+    if (whiteList.includes(strMatchingString.toLowerCase())) {
+      return strMatchingString;
+    }
+    partMatch = strFirstLetter + strPartialMatch;
+    wholeMatch = strMatchingString;
+    strMatchingString = partMatch;
+  }
+
   var censoredString = '';
 
   if (censorFixedLength > 0) {
@@ -96,6 +111,11 @@ function censorReplace(strMatchingString, strFirstLetter) {
     } else {
       censoredString = censorCharacter.repeat(strMatchingString.length);
     }
+  }
+
+  // Whitelist
+  if (strPartialMatch != "") {
+    censoredString = wholeMatch.replace(partMatch, censoredString);
   }
 
   counter++;
@@ -132,6 +152,7 @@ function cleanPage() {
     preserveLast = storage.preserveLast;
     showCounter = storage.showCounter;
     substitutionMark = storage.substitutionMark;
+    whiteList = storage.whiteList;
     words = storage.words;
     // Sort the words array by longest (most-specific) first
     wordList = Object.keys(words).sort(function(a, b) {
