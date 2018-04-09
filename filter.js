@@ -32,6 +32,7 @@ var wordRegExps = [];
 var whitespaceRegExp = new RegExp('\\s');
 var xpathDocText = '//*[not(self::script or self::style)]/text()[normalize-space(.) != ""]';
 var xpathNodeText = './/*[not(self::script or self::style)]/text()[normalize-space(.) != ""]';
+var summary = {};
 
 // Word must match exactly (not sub-string)
 // /\b(w)ord\b/gi
@@ -100,6 +101,7 @@ function censorReplace(strMatchingString, strFirstLetter) {
   }
 
   counter++;
+  summary[strMatchingString.toLowerCase()] === undefined ? summary[strMatchingString.toLowerCase()] = 1 : summary[strMatchingString.toLowerCase()]++;
   // console.log('Censor match:', strMatchingString, censoredString); // DEBUG
   return censoredString;
 }
