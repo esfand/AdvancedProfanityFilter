@@ -37,5 +37,21 @@ If you would like to help with development, but don't have experience coding, it
 #### Original
 After years of using Simple Profanity Filter, I decided that it was time to give back to the community. Thanks markyd13 for all your work on this great extension! You can download the original extension by markyd13 [here](https://chrome.google.com/webstore/detail/simple-profanity-filter/ackkocjhcalcpgpfjcoinogdejibgbho).
 
+### Development
+I am moving the project over to Typescript to make it more pleasant to develop in.
+
+```
+sudo npm install typescript --global
+```
+
+```js
+npm init
+rename .js .ts *.js
+
+npm install -g typescript
+
+./build.sh
+```
+
 ##### License
 This project is licensed under the terms of the GPL v3.0 license.
