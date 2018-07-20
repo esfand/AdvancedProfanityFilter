@@ -2,6 +2,7 @@
 class Config {
   censorCharacter: string;
   censorFixedLength: number;
+  comprehensiveDomains: string[];
   defaultSubstitutions: string[];
   disabledDomains: string[];
   filterMethod: number;
@@ -23,6 +24,7 @@ class Config {
   static readonly _defaults = {
     "censorCharacter": "*",
     "censorFixedLength": 0,
+    "comprehensiveDomains": [],
     "defaultSubstitutions": ["censored", "expletive", "filtered"],
     "disabledDomains": [],
     "filterMethod": 0, // ["Censor", "Substitute", "Remove"];
@@ -32,8 +34,7 @@ class Config {
     "preserveFirst": true,
     "preserveLast": false,
     "showCounter": true,
-    "substitutionMark": true,
-    "words": {}
+    "substitutionMark": true
   };
 
   private static readonly _defaultWords = {
@@ -43,6 +44,7 @@ class Config {
     "bastard": { "matchMethod": 1, "words": ["imperfect", "impure"] },
     "bitch": { "matchMethod": 1, "words": ["jerk"] },
     "cunt": { "matchMethod": 1, "words": ["explative"] },
+    "dammit": { "matchMethod": 1, "words": ["dangit"] },
     "damn": { "matchMethod": 1, "words": ["dang", "darn"] },
     "fuck": { "matchMethod": 1, "words": ["freak", "fudge"] },
     "piss": { "matchMethod": 1, "words": ["pee"] },
@@ -55,11 +57,32 @@ class Config {
 
   static readonly _filterMethodNames = ["Censor", "Substitute", "Remove"];
   static readonly _matchMethodNames = ["Exact Match", "Partial Match", "Whole Match", "Per-Word Match", "Regular Expression"];
+  static readonly _maxBytes = 6500;
+  static readonly _maxWords = 100;
+  static readonly _wordsPattern = /^_words\d+/;
 
   static async build(keys?: string[]) {
     let async_result = await Config.getConfig(keys);
     let instance = new Config(async_result);
     return instance;
+  }
+
+  // Compile words
+  static combineWords(items) {
+    items.words = {};
+    if (items._words0 !== undefined) {
+      // Find all _words* to combine
+      let wordKeys = Object.keys(items).filter(function(key) {
+        return Config._wordsPattern.test(key);
+      });
+
+      // Add all _words* to words and remove _words*
+      wordKeys.forEach(function(key) {
+        Object.assign(items.words, items[key]);
+        delete items[key];
+      });
+    }
+    // console.log('combineWords', items); // DEBUG
   }
 
   // Call build() to create a new instance
@@ -72,25 +95,68 @@ class Config {
     for(let k in async_param) this[k]=async_param[k];
   }
 
+  // Persist all configs from defaults and split _words*
+  dataToPersist() {
+    let self = this;
+    let data = {};
+
+    // Save all settings using keys from _defaults
+    Object.keys(Config._defaults).forEach(function(key) {
+      if (self[key] !== undefined) {
+        data[key] = self[key];
+      }
+    });
+
+    if (self.words) {
+      // Split words back into _words* for storage
+      let splitWords = self.splitWords();
+      Object.keys(splitWords).forEach(function(key) {
+        data[key] = splitWords[key];
+      });
+
+      let wordKeys = Object.keys(self).filter(function(key) {
+        return Config._wordsPattern.test(key);
+      });
+
+      wordKeys.forEach(function(key){
+        data[key] = self[key];
+      })
+    }
+
+    // console.log('dataToPersist', data); // DEBUG - Config
+    return data;
+  }
+
   // Async call to get provided keys (or default keys) from chrome storage
+  // TODO: Keys: Doesn't support getting words
   static getConfig(keys?: string[]) {
     return new Promise(function(resolve, reject) {
       // Generate a request to use with chrome.storage
-      let request = {};
-      if (keys === undefined) {
-        request = Config._defaults
-      } else {
+      let request = null;
+      if (keys !== undefined) {
+        request = {};
         for(let k of keys) { request[k] = Config._defaults[k]; }
       }
 
       chrome.storage.sync.get(request, function(items) {
-        // Only include words if requested
+        // Ensure defaults for undefined settings
+        Object.keys(Config._defaults).forEach(function(defaultKey){
+          if (request == null || arrayContains(Object.keys(request), defaultKey)) {
+            if (items[defaultKey] === undefined) {
+              items[defaultKey] = Config._defaults[defaultKey];
+            }
+          }
+        });
+
+        // Add words if requested, and provide _defaultWords if needed
         if (keys === undefined || arrayContains(keys, 'words')) {
           // Use default words if none were provided
-          if (Object.keys(items.words).length === 0 && items.words.constructor === Object) {
-            items.words = Config._defaultWords;
+          if (items._words0 === undefined || Object.keys(items._words0).length == 0) {
+            items._words0 = Config._defaultWords;
           }
+          Config.combineWords(items);
         }
+
         resolve(items);
       });
     });
@@ -110,25 +176,34 @@ class Config {
   }
 
   save() {
-    let self = this;
+    var self = this;
     return new Promise(function(resolve, reject) {
-      chrome.storage.sync.set(self, function() {
+      chrome.storage.sync.set(self.dataToPersist(), function() {
         resolve(chrome.runtime.lastError ? 1 : 0);
       });
     });
   }
 
-  saveProp({prop: string, val: any}) {
-    // let cfg = this;
-    // cfg[prop] = val;
-    // return new Promise(function(resolve, reject) {
-    //     chrome.storage.sync.set(cfg, function() {
-    //         resolve(chrome.runtime.lastError ? 1 : 0);
-    //     });
-    // });
-  }
+  splitWords() {
+    let self = this;
+    let currentContainerNum = 0;
+    let currentWordNum = 0;
+    // let wordsLength = JSON.stringify(self.words).length;
+    // let wordContainers = Math.ceil(wordsLength/Config._maxBytes);
+    // let wordsNum = Object.keys(self.words).length;
+    let words = {};
+    words[`_words${currentContainerNum}`] = {};
 
-  setProp(event, prop: string, value: any) {
-    this[prop] = value;
+    Object.keys(self.words).sort().forEach(function(word) {
+      if (currentWordNum == Config._maxWords) {
+        currentContainerNum++;
+        currentWordNum = 0;
+        words[`_words${currentContainerNum}`] = {};
+      }
+      words[`_words${currentContainerNum}`][word] = self.words[word];
+      currentWordNum++;
+    });
+
+    return words;
   }
 }

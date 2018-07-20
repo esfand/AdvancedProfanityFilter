@@ -5,7 +5,7 @@
 
 // Actions for extension install or upgrade
 chrome.runtime.onInstalled.addListener(function(details){
-  if (details.reason == 'install'){
+  if (details.reason == 'install') {
     chrome.runtime.openOptionsPage();
   } else if (details.reason == 'update') {
     // var thisVersion = chrome.runtime.getManifest().version;
@@ -13,6 +13,9 @@ chrome.runtime.onInstalled.addListener(function(details){
 
     // TODO: Migrate wordList - Open options page to show new features
     // chrome.runtime.openOptionsPage();
+
+    // TODO: Move words to _words*
+    updateRemoveWordsFromStorage();
 
     // Display update notification
     chrome.notifications.create("extensionUpdate", {
@@ -42,7 +45,7 @@ chrome.runtime.onMessage.addListener(
 // Add selected word/phrase and reload page (unless already present)
 async function addSelection(selection: string) {
   selection = (selection.trim()).toLowerCase();
-  let cfg = await Config.build(['words']);
+  let cfg = await Config.build(); // TODO: Only need words here
 
   if (!arrayContains(Object.keys(cfg.words), selection)) {
     cfg.words[selection] = {"matchMethod": 0, "words": []};
@@ -99,6 +102,29 @@ async function toggleFilterEventPage(domain: string) {
   }
 
   disabled ? enableDomainEventPage(domain) : disableDomainEventPage(domain);
+}
+
+// TODO: Remove after update: transition from previous words structure under the hood
+function updateRemoveWordsFromStorage() {
+  chrome.storage.sync.get({"words": null}, function(oldWords) {
+    console.log('Old words for migration:', oldWords.words);
+    if (oldWords.words) {
+      chrome.storage.sync.set({"_words0": oldWords.words}, function() {
+        if (!chrome.runtime.lastError) {
+          chrome.storage.sync.remove("words", function() {
+            // Split words if necessary
+            var wordsPromise = new Promise(function(resolve, reject) {
+              resolve(Config.build());
+            });
+            wordsPromise
+              .then(function(response: Config) {
+                response.save();
+              });
+          });
+        }
+      });
+    }
+  });
 }
 
 ////
